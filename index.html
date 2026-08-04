@@ -1170,13 +1170,8 @@
 
       conn.send({ type: 'WELCOME' });
 
-      const tempC = document.createElement('canvas');
-      tempC.width = Math.floor(width / 2);
-      tempC.height = Math.floor(height / 2);
-      const tCtx = tempC.getContext('2d');
-      tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
-      const currentArt = tempC.toDataURL('image/jpeg', 0.6);
-
+      // Fixed: Using wallCanvas with PNG to preserve transparency (no black background)
+      const currentArt = wallCanvas.toDataURL('image/png');
       conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
     }
 
