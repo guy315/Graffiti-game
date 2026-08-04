@@ -594,7 +594,7 @@
       </div>
       <div class="form-group" id="privateOptionsGroup" style="display: none;">
         <label>Join Code</label>
-        <input type="text" id="inputRoomCode" class="form-control" placeholder="e.g. 1234" maxlength="6">
+        <input type="text" id="inputRoomCode" class="form-control" placeholder="e.g. 1234" maxlength="15">
       </div>
       <div class="modal-buttons">
         <button class="menu-btn" style="margin-bottom:0;" onclick="createServer()">Launch</button>
@@ -609,7 +609,7 @@
       <div class="modal-title">Enter Private Room Code</div>
       <div class="form-group">
         <label>Code Required</label>
-        <input type="text" id="inputJoinCode" class="form-control" placeholder="Enter code..." maxlength="6">
+        <input type="text" id="inputJoinCode" class="form-control" placeholder="Enter code..." maxlength="15">
       </div>
       <div class="modal-buttons">
         <button class="menu-btn" style="margin-bottom:0;" onclick="submitRoomCode()">Join</button>
@@ -1070,7 +1070,7 @@
       const name = document.getElementById('inputServerName').value || 'Graffiti Room';
       isPrivateServer = document.querySelector('input[name="serverType"]:checked').value === 'private';
       const maxPlayers = parseInt(document.getElementById('inputMaxPlayers').value) || 4;
-      hostRoomCode = document.getElementById('inputRoomCode').value.trim() || '';
+      hostRoomCode = document.getElementById('inputRoomCode').value.trim();
 
       if (isPrivateServer && !hostRoomCode) {
         alert('Please enter a join code for private rooms.');
@@ -1107,48 +1107,37 @@
       });
 
       peer.on('connection', (conn) => {
-        if (clientConnections.length >= maxPlayers - 1) {
-          conn.on('open', () => {
+        conn.on('open', () => {
+          if (clientConnections.length >= maxPlayers - 1) {
             conn.send({ type: 'REJECT', reason: 'Server is full' });
             setTimeout(() => conn.close(), 500);
-          });
-          return;
-        }
-
-        // Validate private room code instantly from connection metadata
-        if (isPrivateServer) {
-          const enteredCode = String(conn.metadata?.code || '').trim().toLowerCase();
-          const actualCode = String(hostRoomCode || '').trim().toLowerCase();
-          
-          if (enteredCode !== actualCode) {
-            conn.on('open', () => {
-              conn.send({ type: 'REJECT', reason: 'Incorrect room code!' });
-              setTimeout(() => conn.close(), 500);
-            });
             return;
           }
-        }
-
-        conn.on('open', () => {
-          if (!clientConnections.includes(conn)) {
-            clientConnections.push(conn);
-            updateHostPlayerBadge();
+          
+          // If it's a public server, accept immediately without waiting for a password packet
+          if (!isPrivateServer) {
+            acceptClientConnection(conn);
           }
-
-          conn.send({ type: 'WELCOME' });
-
-          const tempC = document.createElement('canvas');
-          tempC.width = Math.floor(width / 2);
-          tempC.height = Math.floor(height / 2);
-          const tCtx = tempC.getContext('2d');
-          tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
-          const currentArt = tempC.toDataURL('image/jpeg', 0.6);
-
-          conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
         });
 
         conn.on('data', (data) => {
-          handleNetworkData(data, conn);
+          if (data.type === 'AUTH') {
+            if (isPrivateServer) {
+              const enteredCode = String(data.code || '').trim().toLowerCase();
+              const actualCode = String(hostRoomCode || '').trim().toLowerCase();
+              
+              if (enteredCode === actualCode) {
+                acceptClientConnection(conn);
+              } else {
+                conn.send({ type: 'REJECT', reason: 'Incorrect room code!' });
+                setTimeout(() => conn.close(), 500);
+              }
+            } else {
+              acceptClientConnection(conn);
+            }
+          } else {
+            handleNetworkData(data, conn);
+          }
         });
 
         conn.on('close', () => {
@@ -1156,6 +1145,24 @@
           updateHostPlayerBadge();
         });
       });
+    }
+
+    function acceptClientConnection(conn) {
+      if (!clientConnections.includes(conn)) {
+        clientConnections.push(conn);
+        updateHostPlayerBadge();
+      }
+
+      conn.send({ type: 'WELCOME' });
+
+      const tempC = document.createElement('canvas');
+      tempC.width = Math.floor(width / 2);
+      tempC.height = Math.floor(height / 2);
+      const tCtx = tempC.getContext('2d');
+      tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
+      const currentArt = tempC.toDataURL('image/jpeg', 0.6);
+
+      conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
     }
 
     function updateHostPlayerBadge() {
@@ -1203,12 +1210,12 @@
 
       peer = new Peer();
       peer.on('open', () => {
-        hostConnection = peer.connect(hostPeerId, { 
-          reliable: true,
-          metadata: { code: code } 
-        });
+        hostConnection = peer.connect(hostPeerId, { reliable: true });
 
-        hostConnection.on('open', () => {});
+        hostConnection.on('open', () => {
+          // Send the password code immediately once the data channel opens
+          hostConnection.send({ type: 'AUTH', code: code });
+        });
 
         hostConnection.on('data', (data) => {
           handleNetworkData(data, hostConnection);
