@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Interactive Graffiti Wall Game - Fixed UI Clicks</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #121110;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Courier New', Courier, monospace;
+      touch-action: none;
+      user-select: none;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #bgCanvas {
+      z-index: 0;
+    }
+
+    #wallCanvas {
+      z-index: 1;
+      filter: drop-shadow(0px 0px 3px rgba(0, 0, 0, 0.5));
+    }
+
+    #canCanvas {
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* UI Overlay Controls */
+    .ui-bar {
+      position: absolute;
+      bottom: 20px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(18, 17, 16, 0.92);
+      padding: 10px 18px;
+      border-radius: 30px;
+      border: 1px solid #333;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(6px);
+      flex-wrap: wrap;
+      justify-content: center;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .ui-bar.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(30px);
+    }
+
+    .color-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .color-btn.active {
+      transform: scale(1.25);
+      box-shadow: 0 0 12px currentColor;
+    }
+
+    /* Custom Color Wheel Button Styling */
+    .color-wheel-wrapper {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      cursor: pointer;
+      background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .color-wheel-wrapper.active {
+      transform: scale(1.25);
+      box-shadow: 0 0 12px #fff;
+    }
+
+    .color-wheel-wrapper input[type="color"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .color-wheel-inner {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #39ff14;
+      border: 1.5px solid #fff;
+      pointer-events: none;
+    }
+
+    .tool-btn {
+      background: #262423;
+      color: #fff;
+      border: 1px solid #555;
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.2s ease;
+    }
+
+    .tool-btn:hover {
+      background: #444;
+      border-color: #888;
+    }
+
+    .tool-btn.active-eraser {
+      background: #ff6b81;
+      border-color: #ff4757;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(255, 71, 87, 0.6);
+    }
+
+    .clear-btn:hover {
+      background: #ff3b30;
+      border-color: #ff3b30;
+      color: #fff;
+    }
+
+    /* Floating Show UI Pill (when UI is hidden) */
+    .show-ui-btn {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10;
+      background: rgba(18, 17, 16, 0.75);
+      color: #fff;
+      border: 1px solid #555;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, background 0.2s ease;
+    }
+
+    .show-ui-btn.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .show-ui-btn:hover {
+      background: #444;
+      border-color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="bgCanvas"></canvas>
+  <canvas id="wallCanvas"></canvas>
+  <canvas id="canCanvas"></canvas>
+
+  <div id="uiBar" class="ui-bar">
+    <!-- Standard Color Presets -->
+    <div class="color-btn active" style="background: #39ff14; color: #39ff14;" onclick="setColor('#39ff14', '57, 255, 20', this)"></div>
+    <div class="color-btn" style="background: #ff007f; color: #ff007f;" onclick="setColor('#ff007f', '255, 0, 127', this)"></div>
+    <div class="color-btn" style="background: #00f0ff; color: #00f0ff;" onclick="setColor('#00f0ff', '0, 240, 255', this)"></div>
+    <div class="color-btn" style="background: #ffae00; color: #ffae00;" onclick="setColor('#ffae00', '255, 174, 0', this)"></div>
+    <div class="color-btn" style="background: #ffffff; color: #ffffff;" onclick="setColor('#ffffff', '255, 255, 255', this)"></div>
+    <div class="color-btn" style="background: #111111; color: #888888; border-color: #777;" onclick="setColor('#111111', '17, 17, 17', this)"></div>
+
+    <!-- Custom Color Wheel Picker -->
+    <div id="customColorWrapper" class="color-wheel-wrapper" title="Pick Custom Color">
+      <div id="colorWheelInner" class="color-wheel-inner"></div>
+      <input type="color" id="customColorInput" value="#39ff14" oninput="handleCustomColor(this.value)">
+    </div>
+    
+    <button id="eraserBtn" class="tool-btn" onclick="setEraser()">Eraser</button>
+    <button class="tool-btn clear-btn" onclick="clearWall()">Clear Wall</button>
+    <button class="tool-btn" onclick="toggleUI(false)">Hide UI</button>
+  </div>
+
+  <!-- Show UI Floating Pill Button -->
+  <button id="showUiBtn" class="show-ui-btn" onclick="toggleUI(true)">Show Controls</button>
+
+  <script>
+    const bgCanvas = document.getElementById('bgCanvas');
+    const wallCanvas = document.getElementById('wallCanvas');
+    const canCanvas = document.getElementById('canCanvas');
+    
+    const bgCtx = bgCanvas.getContext('2d');
+    const wallCtx = wallCanvas.getContext('2d');
+    const canCtx = canCanvas.getContext('2d');
+
+    let width, height;
+    let drips = [];
+
+    // Default Paint Color & Tool State
+    let currentTool = 'spray';
+    let currentColorHex = '#39ff14';
+    let currentColorRGB = '57, 255, 20';
+    const ERASER_RADIUS = 35;
+
+    // Interaction State
+    let isSpraying = false;
+    let mouseX = window.innerWidth / 2;
+    let mouseY = window.innerHeight / 2;
+    let shakeAngle = 0;
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      
+      bgCanvas.width = width;
+      bgCanvas.height = height;
+      wallCanvas.width = width;
+      wallCanvas.height = height;
+      canCanvas.width = width;
+      canCanvas.height = height;
+
+      drawRealisticBricks();
+    }
+
+    window.addEventListener('resize', resize);
+
+    // --- PROCEDURAL BRICK WALL TEXTURE ---
+    function drawRealisticBricks() {
+      bgCtx.clearRect(0, 0, width, height);
+      bgCtx.fillStyle = '#262423';
+      bgCtx.fillRect(0, 0, width, height);
+
+      const brickW = 110;
+      const brickH = 48;
+      const gap = 5;
+      const rows = Math.ceil(height / (brickH + gap)) + 1;
+      const cols = Math.ceil(width / (brickW + gap)) + 1;
+
+      for (let r = 0; r < rows; r++) {
+        const offsetX = (r % 2 === 0) ? 0 : -(brickW / 2);
+        for (let c = 0; c < cols; c++) {
+          const x = c * (brickW + gap) + offsetX;
+          const y = r * (brickH + gap);
+
+          const rCol = 65 + Math.floor(Math.random() * 35);
+          const gCol = 32 + Math.floor(Math.random() * 18);
+          const bCol = 25 + Math.floor(Math.random() * 15);
+
+          bgCtx.fillStyle = `rgb(${rCol}, ${gCol}, ${bCol})`;
+          bgCtx.fillRect(x, y, brickW, brickH);
+
+          bgCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+          bgCtx.fillRect(x, y, brickW, 3);
+          bgCtx.fillRect(x, y, 3, brickH);
+
+          bgCtx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+          bgCtx.fillRect(x, y + brickH - 4, brickW, 4);
+          bgCtx.fillRect(x + brickW - 4, y, 4, brickH);
+
+          for (let i = 0; i < 12; i++) {
+            const gx = x + Math.random() * brickW;
+            const gy = y + Math.random() * brickH;
+            bgCtx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.06)';
+            bgCtx.fillRect(gx, gy, 2, 2);
+          }
+        }
+      }
+
+      // Grime / Vignette Overlay
+      const grad = bgCtx.createRadialGradient(width/2, height/2, height*0.2, width/2, height/2, width*0.7);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(1, 'rgba(8, 8, 8, 0.75)');
+      bgCtx.fillStyle = grad;
+      bgCtx.fillRect(0, 0, width, height);
+    }
+
+    // --- INPUT HANDLING (MOUSE & TOUCH) ---
+    function updateCoords(e) {
+      if (e.touches && e.touches.length > 0) {
+        mouseX = e.touches[0].clientX;
+        mouseY = e.touches[0].clientY;
+      } else {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      }
+    }
+
+    // Checks if click/touch originated inside the UI bar or buttons
+    function isUiTarget(e) {
+      return e.target.closest('#uiBar') || e.target.closest('#showUiBtn');
+    }
+
+    window.addEventListener('mousedown', (e) => {
+      if (isUiTarget(e)) return; // Ignore clicks on UI elements
+      isSpraying = true;
+      updateCoords(e);
+    });
+
+    window.addEventListener('mousemove', updateCoords);
+    window.addEventListener('mouseup', () => { isSpraying = false; });
+    window.addEventListener('mouseleave', () => { isSpraying = false; });
+
+    window.addEventListener('touchstart', (e) => {
+      if (isUiTarget(e)) return; // Ignore touch on UI elements
+      isSpraying = true;
+      updateCoords(e);
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isSpraying) {
+        e.preventDefault();
+        updateCoords(e);
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => { isSpraying = false; });
+    window.addEventListener('touchcancel', () => { isSpraying = false; });
+
+    // Keyboard Shortcut (Press 'H' to toggle UI)
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'h') {
+        const uiBar = document.getElementById('uiBar');
+        const isHidden = uiBar.classList.contains('hidden');
+        toggleUI(isHidden);
+      }
+    });
+
+    // --- HEX TO RGB CONVERTER ---
+    function hexToRgb(hex) {
+      hex = hex.replace(/^#/, '');
+      if (hex.length === 3) {
+        hex = hex.split('').map(c => c + c).join('');
+      }
+      const num = parseInt(hex, 16);
+      const r = (num >> 16) & 255;
+      const g = (num >> 8) & 255;
+      const b = num & 255;
+      return `${r}, ${g}, ${b}`;
+    }
+
+    // --- TOOL & COLOR SELECTION ---
+    function setColor(hex, rgb, btnElement) {
+      currentTool = 'spray';
+      currentColorHex = hex;
+      currentColorRGB = rgb;
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('customColorWrapper').classList.remove('active');
+      document.getElementById('eraserBtn').classList.remove('active-eraser');
+      if (btnElement) btnElement.classList.add('active');
+    }
+
+    function handleCustomColor(hex) {
+      currentTool = 'spray';
+      currentColorHex = hex;
+      currentColorRGB = hexToRgb(hex);
+      document.getElementById('colorWheelInner').style.background = hex;
+
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('customColorWrapper').classList.add('active');
+      document.getElementById('eraserBtn').classList.remove('active-eraser');
+    }
+
+    function setEraser() {
+      currentTool = 'eraser';
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('customColorWrapper').classList.remove('active');
+      document.getElementById('eraserBtn').classList.add('active-eraser');
+    }
+
+    function clearWall() {
+      wallCtx.clearRect(0, 0, width, height);
+      drips = [];
+    }
+
+    function toggleUI(show) {
+      const uiBar = document.getElementById('uiBar');
+      const showUiBtn = document.getElementById('showUiBtn');
+      if (show) {
+        uiBar.classList.remove('hidden');
+        showUiBtn.classList.remove('visible');
+      } else {
+        uiBar.classList.add('hidden');
+        showUiBtn.classList.add('visible');
+      }
+    }
+
+    // --- SPRAY PAINT CAN RENDERING ---
+    function drawSprayCan(x, y, shake, spraying) {
+      canCtx.save();
+      canCtx.translate(x, y);
+      canCtx.rotate(shake);
+
+      // Aerosol mist cone from nozzle
+      if (spraying) {
+        const gradient = canCtx.createRadialGradient(-30, -75, 4, -30, -75, 45);
+        gradient.addColorStop(0, `rgba(${currentColorRGB}, 0.85)`);
+        gradient.addColorStop(0.4, `rgba(${currentColorRGB}, 0.25)`);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        canCtx.fillStyle = gradient;
+        canCtx.beginPath();
+        canCtx.arc(-30, -75, 45, 0, Math.PI * 2);
+        canCtx.fill();
+      }
+
+      // Can Cap & Nozzle Tip
+      canCtx.fillStyle = '#e0e0e0';
+      canCtx.fillRect(-8, -75, 16, 12);
+      canCtx.fillStyle = '#0a0a0a';
+      canCtx.fillRect(-10, -70, 4, 4);
+
+      // Metallic Dome
+      canCtx.fillStyle = '#4f4f4f';
+      canCtx.beginPath();
+      canCtx.moveTo(-25, -45);
+      canCtx.quadraticCurveTo(0, -68, 25, -45);
+      canCtx.fill();
+
+      // Main Body
+      const bodyGrad = canCtx.createLinearGradient(-30, 0, 30, 0);
+      bodyGrad.addColorStop(0, '#111');
+      bodyGrad.addColorStop(0.3, '#333');
+      bodyGrad.addColorStop(0.7, '#222');
+      bodyGrad.addColorStop(1, '#080808');
+      canCtx.fillStyle = bodyGrad;
+      canCtx.fillRect(-28, -45, 56, 130);
+
+      // Label matching current paint color
+      canCtx.fillStyle = '#0f0f0f';
+      canCtx.fillRect(-28, -25, 56, 70);
+      canCtx.fillStyle = currentColorHex;
+      canCtx.font = 'bold 12px monospace';
+      canCtx.textAlign = 'center';
+      canCtx.fillText('KRYLON', 0, 0);
+      canCtx.fillText('SPRAY', 0, 18);
+
+      // Bottom Rim
+      canCtx.fillStyle = '#5a5a5a';
+      canCtx.fillRect(-28, 83, 56, 6);
+
+      canCtx.restore();
+    }
+
+    // --- ERASER CURSOR RENDERING ---
+    function drawEraserCursor(x, y, active) {
+      canCtx.save();
+      canCtx.translate(x, y);
+
+      // Dashed Target Circle
+      canCtx.strokeStyle = active ? '#ff6b81' : '#ffffff';
+      canCtx.lineWidth = 2;
+      canCtx.setLineDash([6, 4]);
+      canCtx.beginPath();
+      canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2);
+      canCtx.stroke();
+
+      // Translucent scrubbing fill when active
+      if (active) {
+        canCtx.fillStyle = 'rgba(255, 107, 129, 0.25)';
+        canCtx.beginPath();
+        canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2);
+        canCtx.fill();
+      }
+
+      // Small Pink Eraser Block Icon at bottom-right of circle
+      canCtx.translate(ERASER_RADIUS - 8, ERASER_RADIUS - 8);
+      canCtx.rotate(-0.3);
+      canCtx.fillStyle = '#ff6b81';
+      canCtx.fillRect(-12, -8, 24, 16);
+      canCtx.fillStyle = '#fff';
+      canCtx.fillRect(-12, -8, 8, 16);
+      canCtx.strokeStyle = '#222';
+      canCtx.lineWidth = 1;
+      canCtx.strokeRect(-12, -8, 24, 16);
+
+      canCtx.restore();
+    }
+
+    // --- APPLY PAINT TO WALL ---
+    function sprayAt(x, y) {
+      wallCtx.save();
+      wallCtx.globalCompositeOperation = 'source-over';
+
+      const density = 60;
+      for (let i = 0; i < density; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 22;
+        const dotX = x + Math.cos(angle) * radius;
+        const dotY = y + Math.sin(angle) * radius;
+        const alpha = (1 - radius / 22) * 0.85;
+
+        wallCtx.fillStyle = `rgba(${currentColorRGB}, ${alpha})`;
+        wallCtx.beginPath();
+        wallCtx.arc(dotX, dotY, Math.random() * 2.2 + 0.8, 0, Math.PI * 2);
+        wallCtx.fill();
+      }
+
+      if (Math.random() < 0.18) {
+        drips.push({
+          x: x + (Math.random() - 0.5) * 12,
+          y: y,
+          speed: Math.random() * 0.6 + 0.3,
+          length: 0,
+          maxLength: Math.random() * 80 + 15,
+          width: Math.random() * 2.4 + 1.2,
+          rgb: currentColorRGB,
+          alpha: 0.95
+        });
+      }
+      wallCtx.restore();
+    }
+
+    // --- ERASE CIRCLE AREA ON WALL ---
+    function eraseAt(x, y) {
+      wallCtx.save();
+      wallCtx.globalCompositeOperation = 'destination-out';
+      wallCtx.beginPath();
+      wallCtx.arc(x, y, ERASER_RADIUS, 0, Math.PI * 2);
+      wallCtx.fill();
+      wallCtx.restore();
+    }
+
+    // --- RENDER FLOWING DRIPS ---
+    function renderDrips() {
+      wallCtx.save();
+      wallCtx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < drips.length; i++) {
+        const d = drips[i];
+        if (d.length < d.maxLength) {
+          d.length += d.speed;
+          d.y += d.speed;
+
+          wallCtx.fillStyle = `rgba(${d.rgb}, ${d.alpha})`;
+          wallCtx.beginPath();
+          wallCtx.arc(d.x, d.y, d.width, 0, Math.PI * 2);
+          wallCtx.fill();
+        }
+      }
+      wallCtx.restore();
+    }
+
+    // --- GAME LOOP ---
+    function animate() {
+      canCtx.clearRect(0, 0, width, height);
+      renderDrips();
+
+      if (currentTool === 'spray') {
+        if (isSpraying) {
+          sprayAt(mouseX, mouseY);
+          shakeAngle = (Math.random() - 0.5) * 0.08;
+        } else {
+          shakeAngle = 0;
+        }
+        drawSprayCan(mouseX + 30, mouseY + 75, shakeAngle, isSpraying);
+      } else if (currentTool === 'eraser') {
+        if (isSpraying) {
+          eraseAt(mouseX, mouseY);
+        }
+        drawEraserCursor(mouseX, mouseY, isSpraying);
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    // Initialize
+    resize();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
