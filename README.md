@@ -1,8 +1,12 @@
-Click below to play or download the game directly:
+# 🎨 Graffiti Game
 
-### 🎮 How to Play
-* **Play Live (Recommended):** [Click Here to Play in Browser](https://guy315.github.io/Graffiti-game)
+Welcome! Click the link below to play the game directly in your web browser:
+
+### 🎮 Play Now
+👉 **[Click Here to Play Graffiti Game](https://YOUR-USERNAME.github.io/YOUR-REPO-NAME)**
+
 ---
-### 📱 How to Install as an App
-* **iPhone / Android:** Open the live link above in your browser and tap **"Add to Home Screen"**.
-* **PC / Computer:** Open the live link in Chrome or Edge and click the **"Install"** icon in the address bar.
+
+### 📱 How to Play on Mobile or Desktop
+* **iPhone / Android:** Open the link above in Chrome or Safari and tap **"Add to Home Screen"** to save it as an app.
+* **PC / Mac:** Open the link above and play right in your browser!
