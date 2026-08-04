@@ -3,7 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Interactive Graffiti Wall Game - Fixed UI Clicks</title>
+  <title>Interactive Graffiti Wall Game - Sound Enabled</title>
+
+  <!-- Mobile Fullscreen App Meta Tags -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#121110">
+  <meta name="apple-mobile-web-app-title" content="Graffiti Wall">
+  <meta name="application-name" content="Graffiti Wall">
+
+  <!-- Custom App Icon Links -->
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon.png">
+  <link rel="manifest" href="manifest.json">
+
+<!-- Web Application Manifest for Android Chrome -->
+  <link rel="manifest" href="manifest.json">
+  
   <style>
     * {
       box-sizing: border-box;
@@ -158,7 +175,7 @@
       color: #fff;
     }
 
-    /* Floating Show UI Pill (when UI is hidden) */
+    /* Floating Show UI Pill */
     .show-ui-btn {
       position: absolute;
       bottom: 20px;
@@ -242,7 +259,107 @@
     let isSpraying = false;
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
+    let lastX = mouseX;
+    let lastY = mouseY;
     let shakeAngle = 0;
+
+    // --- AUDIO SYSTEM (Procedural Web Audio API) ---
+    let audioCtx = null;
+    let sprayNode = null;
+    let sprayGain = null;
+    let shakeCooldown = 0;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        setupSprayAudio();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Creates realistic white-noise aerosol spray sound
+    function setupSprayAudio() {
+      const bufferSize = audioCtx.sampleRate * 2;
+      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+
+      sprayNode = audioCtx.createBufferSource();
+      sprayNode.buffer = noiseBuffer;
+      sprayNode.loop = true;
+
+      // Filter to mimic aerosol nozzle hiss
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 3200;
+      filter.Q.value = 1.2;
+
+      sprayGain = audioCtx.createGain();
+      sprayGain.gain.setValueAtTime(0, audioCtx.currentTime);
+
+      sprayNode.connect(filter);
+      filter.connect(sprayGain);
+      sprayGain.connect(audioCtx.destination);
+      sprayNode.start();
+    }
+
+    function startSpraySound() {
+      initAudio();
+      if (sprayGain && currentTool === 'spray') {
+        sprayGain.gain.setTargetAtTime(0.18, audioCtx.currentTime, 0.03);
+      }
+    }
+
+    function stopSpraySound() {
+      if (sprayGain) {
+        sprayGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.03);
+      }
+    }
+
+    // Play spray can metallic marble shake sound
+    function playShakeSound() {
+      initAudio();
+      if (!audioCtx || Date.now() - shakeCooldown < 120) return;
+      shakeCooldown = Date.now();
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(450 + Math.random() * 200, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.04);
+
+      gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.04);
+    }
+
+    // Play quick button click audio
+    function playClickSound() {
+      initAudio();
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.05);
+
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.05);
+    }
 
     function resize() {
       width = window.innerWidth;
@@ -312,6 +429,9 @@
 
     // --- INPUT HANDLING (MOUSE & TOUCH) ---
     function updateCoords(e) {
+      lastX = mouseX;
+      lastY = mouseY;
+
       if (e.touches && e.touches.length > 0) {
         mouseX = e.touches[0].clientX;
         mouseY = e.touches[0].clientY;
@@ -319,27 +439,42 @@
         mouseX = e.clientX;
         mouseY = e.clientY;
       }
+
+      // Detect movement speed to trigger shake sound
+      const dist = Math.hypot(mouseX - lastX, mouseY - lastY);
+      if (dist > 18) {
+        playShakeSound();
+      }
     }
 
-    // Checks if click/touch originated inside the UI bar or buttons
     function isUiTarget(e) {
       return e.target.closest('#uiBar') || e.target.closest('#showUiBtn');
     }
 
     window.addEventListener('mousedown', (e) => {
-      if (isUiTarget(e)) return; // Ignore clicks on UI elements
+      if (isUiTarget(e)) return;
       isSpraying = true;
       updateCoords(e);
+      startSpraySound();
     });
 
     window.addEventListener('mousemove', updateCoords);
-    window.addEventListener('mouseup', () => { isSpraying = false; });
-    window.addEventListener('mouseleave', () => { isSpraying = false; });
+    
+    window.addEventListener('mouseup', () => { 
+      isSpraying = false; 
+      stopSpraySound();
+    });
+    
+    window.addEventListener('mouseleave', () => { 
+      isSpraying = false; 
+      stopSpraySound();
+    });
 
     window.addEventListener('touchstart', (e) => {
-      if (isUiTarget(e)) return; // Ignore touch on UI elements
+      if (isUiTarget(e)) return;
       isSpraying = true;
       updateCoords(e);
+      startSpraySound();
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
@@ -349,8 +484,15 @@
       }
     }, { passive: false });
 
-    window.addEventListener('touchend', () => { isSpraying = false; });
-    window.addEventListener('touchcancel', () => { isSpraying = false; });
+    window.addEventListener('touchend', () => { 
+      isSpraying = false; 
+      stopSpraySound();
+    });
+    
+    window.addEventListener('touchcancel', () => { 
+      isSpraying = false; 
+      stopSpraySound();
+    });
 
     // Keyboard Shortcut (Press 'H' to toggle UI)
     window.addEventListener('keydown', (e) => {
@@ -376,6 +518,7 @@
 
     // --- TOOL & COLOR SELECTION ---
     function setColor(hex, rgb, btnElement) {
+      playClickSound();
       currentTool = 'spray';
       currentColorHex = hex;
       currentColorRGB = rgb;
@@ -397,6 +540,8 @@
     }
 
     function setEraser() {
+      playClickSound();
+      stopSpraySound();
       currentTool = 'eraser';
       document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
       document.getElementById('customColorWrapper').classList.remove('active');
@@ -404,11 +549,13 @@
     }
 
     function clearWall() {
+      playClickSound();
       wallCtx.clearRect(0, 0, width, height);
       drips = [];
     }
 
     function toggleUI(show) {
+      playClickSound();
       const uiBar = document.getElementById('uiBar');
       const showUiBtn = document.getElementById('showUiBtn');
       if (show) {
