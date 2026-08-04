@@ -657,6 +657,21 @@
   <button id="showUiBtn" class="show-ui-btn" onclick="toggleUI(true)">Show Controls</button>
 
   <script>
+    // --- PERSISTENT PLAYER ID SYSTEM ---
+    function getOrCreatePlayerId() {
+      let playerId = localStorage.getItem('spray_game_player_id');
+      if (!playerId) {
+        playerId = 'painter_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('spray_game_player_id', playerId);
+        console.log("Created new permanent player ID:", playerId);
+      } else {
+        console.log("Loaded existing permanent player ID:", playerId);
+      }
+      return playerId;
+    }
+
+    const MY_PLAYER_ID = getOrCreatePlayerId();
+
     // --- APP & MULTIPLAYER STATE ---
     let gameMode = 'single'; // 'single', 'host', 'client'
     let peer = null;
@@ -920,6 +935,7 @@
       const saves = getSavedArtworks();
       const newSave = {
         id: Date.now(),
+        painterId: MY_PLAYER_ID,
         date: new Date().toLocaleDateString(),
         data: dataURL
       };
@@ -1114,7 +1130,6 @@
             return;
           }
           
-          // If it's a public server, accept immediately without waiting for a password packet
           if (!isPrivateServer) {
             acceptClientConnection(conn);
           }
@@ -1213,8 +1228,7 @@
         hostConnection = peer.connect(hostPeerId, { reliable: true });
 
         hostConnection.on('open', () => {
-          // Send the password code immediately once the data channel opens
-          hostConnection.send({ type: 'AUTH', code: code });
+          hostConnection.send({ type: 'AUTH', code: code, playerId: MY_PLAYER_ID });
         });
 
         hostConnection.on('data', (data) => {
@@ -1400,7 +1414,7 @@
     // --- SPRAY & ERASE DRAWING LOGIC ---
     function sprayAt(x, y) {
       sprayAtDirect(x, y, currentColorRGB, sprayRadius);
-      sendNetworkAction({ type: 'SPRAY', x: x, y: y, rgb: currentColorRGB, radius: sprayRadius });
+      sendNetworkAction({ type: 'SPRAY', x: x, y: y, rgb: currentColorRGB, radius: sprayRadius, painter: MY_PLAYER_ID });
     }
 
     function sprayAtDirect(x, y, rgb, radius) {
