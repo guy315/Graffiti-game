@@ -649,7 +649,8 @@
     <button id="eraserBtn" class="tool-btn" onclick="setEraser()">Eraser</button>
     <button class="tool-btn save-btn" onclick="saveWall()">Save Art</button>
     <button class="tool-btn clear-btn" onclick="clearWall()">Clear Wall</button>
-    <button id="leaveBtn" class="tool-btn leave-btn" onclick="leaveGame()" style="display:none;">Leave</button>
+    <button class="tool-btn leave-btn" onclick="exitToMenu()">Main Menu</button>
+    <button id="leaveBtn" class="tool-btn leave-btn" onclick="leaveGame()" style="display:none;">Leave Room</button>
     <button class="tool-btn" onclick="toggleUI(false)">Hide UI</button>
   </div>
 
@@ -878,6 +879,16 @@
       document.getElementById('mainMenuScreen').classList.add('active');
     }
 
+    function exitToMenu() {
+      playClickSound();
+      if (mqttClient) { mqttClient.end(); mqttClient = null; }
+      if (peer) { peer.destroy(); peer = null; }
+      clearWall();
+      document.getElementById('connectionBadge').classList.remove('active');
+      document.getElementById('serverBrowserScreen').classList.remove('active');
+      document.getElementById('mainMenuScreen').classList.add('active');
+    }
+
     function leaveGame() {
       playClickSound();
       if (mqttClient) { mqttClient.end(); mqttClient = null; }
@@ -1057,7 +1068,7 @@
       const name = document.getElementById('inputServerName').value || 'Graffiti Room';
       const isPrivate = document.querySelector('input[name="serverType"]:checked').value === 'private';
       const maxPlayers = parseInt(document.getElementById('inputMaxPlayers').value) || 4;
-      const code = document.getElementById('inputRoomCode').value || '';
+      const code = document.getElementById('inputRoomCode').value.trim() || '';
 
       if (isPrivate && !code) {
         alert('Please enter a join code for private rooms.');
@@ -1096,13 +1107,17 @@
 
       peer.on('connection', (conn) => {
         if (clientConnections.length >= maxPlayers - 1) {
-          conn.on('open', () => { conn.send({ type: 'REJECT', reason: 'Server is full' }); setTimeout(() => conn.close(), 500); });
+          conn.on('open', () => {
+            conn.send({ type: 'REJECT', reason: 'Server is full' });
+            setTimeout(() => conn.close(), 500);
+          });
           return;
         }
 
-        clientConnections.push(conn);
-
-        conn.on('open', () => {});
+        conn.on('open', () => {
+          clientConnections.push(conn);
+          updateHostPlayerBadge();
+        });
 
         conn.on('data', (data) => {
           handleNetworkData(data, conn);
@@ -1110,8 +1125,16 @@
 
         conn.on('close', () => {
           clientConnections = clientConnections.filter(c => c !== conn);
+          updateHostPlayerBadge();
         });
       });
+    }
+
+    function updateHostPlayerBadge() {
+      const name = document.getElementById('inputServerName').value || 'Graffiti Room';
+      const maxPlayers = parseInt(document.getElementById('inputMaxPlayers').value) || 4;
+      const count = clientConnections.length + 1;
+      document.getElementById('badgeText').innerText = `${name} (${count}/${maxPlayers})`;
     }
 
     function tryJoinServer(serverId) {
@@ -1121,6 +1144,7 @@
 
       selectedServerToJoin = server;
       if (server.isPrivate) {
+        document.getElementById('inputJoinCode').value = '';
         document.getElementById('passwordModal').classList.add('active');
       } else {
         connectToServer(server.id, '');
@@ -1136,11 +1160,17 @@
     function submitRoomCode() {
       playClickSound();
       const enteredCode = document.getElementById('inputJoinCode').value;
-      if (selectedServerToJoin && enteredCode === selectedServerToJoin.code) {
+      if (!selectedServerToJoin) return;
+
+      // Safe string comparison trimming accidental trailing spaces & ignoring capitalization
+      const cleanEntered = String(enteredCode).trim().toLowerCase();
+      const cleanTarget = String(selectedServerToJoin.code).trim().toLowerCase();
+
+      if (cleanEntered === cleanTarget) {
         closePasswordModal();
-        connectToServer(selectedServerToJoin.id, enteredCode);
+        connectToServer(selectedServerToJoin.id, cleanEntered);
       } else {
-        alert('Incorrect room code.');
+        alert('Incorrect room code. Please try again.');
       }
     }
 
@@ -1148,13 +1178,13 @@
       document.getElementById('serverBrowserScreen').classList.remove('active');
       gameMode = 'client';
       document.getElementById('leaveBtn').style.display = 'inline-block';
-      document.getElementById('badgeText').innerText = `Connected to Room`;
+      document.getElementById('badgeText').innerText = `Connecting to host...`;
       document.getElementById('connectionBadge').classList.add('active');
       resize();
 
       peer = new Peer();
       peer.on('open', () => {
-        hostConnection = peer.connect(hostPeerId);
+        hostConnection = peer.connect(hostPeerId, { reliable: true });
 
         hostConnection.on('open', () => {
           hostConnection.send({ type: 'JOIN', code: code });
@@ -1168,12 +1198,24 @@
           alert('Disconnected from server.');
           leaveGame();
         });
+
+        hostConnection.on('error', (err) => {
+          alert('Could not connect to host.');
+          leaveGame();
+        });
       });
     }
 
     // --- NETWORK DATA SYNC ---
     function handleNetworkData(data, conn) {
-      if (data.type === 'SPRAY') {
+      if (data.type === 'JOIN') {
+        // Host confirms connection to the newly joined client
+        if (gameMode === 'host') {
+          conn.send({ type: 'WELCOME' });
+        }
+      } else if (data.type === 'WELCOME') {
+        document.getElementById('badgeText').innerText = `Connected to Room`;
+      } else if (data.type === 'SPRAY') {
         sprayAtDirect(data.x, data.y, data.rgb, data.radius);
         if (gameMode === 'host') {
           clientConnections.forEach(c => { if (c !== conn) c.send(data); });
