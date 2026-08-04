@@ -3,7 +3,7 @@
 Welcome! Click the link below to play the game directly in your web browser:
 
 ### 🎮 Play Now
-👉 **[Click Here to Play Graffiti Game](https://YOUR-USERNAME.github.io/YOUR-REPO-NAME)**
+👉 **[Click Here to Play Graffiti Game](https://guy315.github.io/Graffiti-game/)**
 
 ---
 
