@@ -665,6 +665,8 @@
     let clientConnections = [];
     let discoveredServers = {};
     let selectedServerToJoin = null;
+    let hostRoomCode = '';
+    let isPrivateServer = false;
 
     const MQTT_TOPIC_DISCOVERY = 'graffiti_wall_servers_v1';
     const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
@@ -1066,11 +1068,11 @@
     function createServer() {
       playClickSound();
       const name = document.getElementById('inputServerName').value || 'Graffiti Room';
-      const isPrivate = document.querySelector('input[name="serverType"]:checked').value === 'private';
+      isPrivateServer = document.querySelector('input[name="serverType"]:checked').value === 'private';
       const maxPlayers = parseInt(document.getElementById('inputMaxPlayers').value) || 4;
-      const code = document.getElementById('inputRoomCode').value.trim() || '';
+      hostRoomCode = document.getElementById('inputRoomCode').value.trim() || '';
 
-      if (isPrivate && !code) {
+      if (isPrivateServer && !hostRoomCode) {
         alert('Please enter a join code for private rooms.');
         return;
       }
@@ -1089,8 +1091,7 @@
         const serverInfo = {
           id: peerId,
           name: name,
-          isPrivate: isPrivate,
-          code: code,
+          isPrivate: isPrivateServer,
           maxPlayers: maxPlayers,
           players: 1
         };
@@ -1115,8 +1116,7 @@
         }
 
         conn.on('open', () => {
-          clientConnections.push(conn);
-          updateHostPlayerBadge();
+          // Wait for JOIN message with code validation before adding to client list
         });
 
         conn.on('data', (data) => {
@@ -1159,18 +1159,10 @@
 
     function submitRoomCode() {
       playClickSound();
-      const enteredCode = document.getElementById('inputJoinCode').value;
+      const enteredCode = document.getElementById('inputJoinCode').value.trim();
       if (!selectedServerToJoin) return;
-
-      const cleanEntered = String(enteredCode).trim().toLowerCase();
-      const cleanTarget = String(selectedServerToJoin.code).trim().toLowerCase();
-
-      if (cleanEntered === cleanTarget) {
-        closePasswordModal();
-        connectToServer(selectedServerToJoin.id, cleanEntered);
-      } else {
-        alert('Incorrect room code. Please try again.');
-      }
+      closePasswordModal();
+      connectToServer(selectedServerToJoin.id, enteredCode);
     }
 
     function connectToServer(hostPeerId, code) {
@@ -1209,9 +1201,32 @@
     function handleNetworkData(data, conn) {
       if (data.type === 'JOIN') {
         if (gameMode === 'host') {
-          // Send welcome confirmation and existing canvas artwork so the new player sees what's already painted
+          // Validate code if private
+          if (isPrivateServer) {
+            const cleanEntered = String(data.code || '').trim().toLowerCase();
+            const cleanHost = String(hostRoomCode || '').trim().toLowerCase();
+            if (cleanEntered !== cleanHost) {
+              conn.send({ type: 'REJECT', reason: 'Incorrect room code!' });
+              setTimeout(() => conn.close(), 500);
+              return;
+            }
+          }
+
+          if (!clientConnections.includes(conn)) {
+            clientConnections.push(conn);
+            updateHostPlayerBadge();
+          }
+
           conn.send({ type: 'WELCOME' });
-          const currentArt = wallCanvas.toDataURL();
+
+          // Send compressed/scaled-down canvas state to avoid WebRTC data limit crashes
+          const tempC = document.createElement('canvas');
+          tempC.width = Math.floor(width / 2);
+          tempC.height = Math.floor(height / 2);
+          const tCtx = tempC.getContext('2d');
+          tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
+          const currentArt = tempC.toDataURL('image/jpeg', 0.6);
+
           conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
         }
       } else if (data.type === 'WELCOME') {
@@ -1219,8 +1234,10 @@
       } else if (data.type === 'LOAD_CANVAS') {
         const img = new Image();
         img.onload = () => {
+          wallCtx.save();
           wallCtx.clearRect(0, 0, width, height);
-          wallCtx.drawImage(img, 0, 0);
+          wallCtx.drawImage(img, 0, 0, width, height);
+          wallCtx.restore();
         };
         img.src = data.dataURL;
       } else if (data.type === 'SPRAY') {
