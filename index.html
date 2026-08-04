@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Interactive Graffiti Wall Game - Sound Enabled</title>
+  <title>Interactive Graffiti Wall - Multiplayer</title>
 
   <!-- Mobile Fullscreen App Meta Tags -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -16,10 +16,13 @@
   <!-- Custom App Icon Links -->
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon.png">
+  
+  <!-- Web Application Manifest for Android Chrome -->
   <link rel="manifest" href="manifest.json">
 
-<!-- Web Application Manifest for Android Chrome -->
-  <link rel="manifest" href="manifest.json">
+  <!-- PeerJS for P2P Multiplayer & MQTT.js for Server Discovery -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   
   <style>
     * {
@@ -39,8 +42,276 @@
       font-family: 'Courier New', Courier, monospace;
       touch-action: none;
       user-select: none;
+      color: #fff;
     }
 
+    /* Screen Management */
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      background: rgba(18, 17, 16, 0.95);
+      backdrop-filter: blur(8px);
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Main Menu Styling */
+    .menu-container {
+      text-align: center;
+      max-width: 450px;
+      width: 90%;
+      padding: 40px 30px;
+      background: #1a1817;
+      border: 2px solid #333;
+      border-radius: 20px;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.8);
+    }
+
+    .menu-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: #39ff14;
+      margin-bottom: 10px;
+      text-shadow: 0 0 15px rgba(57, 255, 20, 0.5);
+      letter-spacing: 2px;
+    }
+
+    .menu-subtitle {
+      font-size: 14px;
+      color: #aaa;
+      margin-bottom: 35px;
+      letter-spacing: 1px;
+    }
+
+    .menu-btn {
+      width: 100%;
+      background: #262423;
+      color: #fff;
+      border: 2px solid #555;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 15px;
+      transition: all 0.2s ease;
+    }
+
+    .menu-btn:hover {
+      background: #39ff14;
+      border-color: #39ff14;
+      color: #121110;
+      box-shadow: 0 0 15px rgba(57, 255, 20, 0.6);
+      transform: translateY(-2px);
+    }
+
+    .menu-btn.secondary:hover {
+      background: #00f0ff;
+      border-color: #00f0ff;
+      color: #121110;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+    }
+
+    /* Server Browser Screen */
+    .lobby-container {
+      width: 90%;
+      max-width: 650px;
+      height: 85%;
+      background: #1a1817;
+      border: 2px solid #333;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.8);
+      position: relative;
+    }
+
+    .lobby-header {
+      padding: 20px 25px;
+      background: #221f1e;
+      border-bottom: 2px solid #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .lobby-title {
+      font-size: 20px;
+      font-weight: bold;
+      color: #00f0ff;
+      letter-spacing: 1px;
+    }
+
+    .server-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .server-card {
+      background: #262423;
+      border: 1px solid #444;
+      padding: 15px 20px;
+      border-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+
+    .server-card:hover {
+      border-color: #00f0ff;
+      background: #2e2c2b;
+    }
+
+    .server-info h4 {
+      font-size: 16px;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .server-info p {
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .server-join-btn {
+      background: #39ff14;
+      color: #121110;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      font-size: 12px;
+      transition: transform 0.1s ease;
+    }
+
+    .server-join-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+    }
+
+    .no-servers {
+      text-align: center;
+      color: #777;
+      margin-top: 50px;
+      font-style: italic;
+    }
+
+    .lobby-footer {
+      padding: 15px 25px;
+      background: #221f1e;
+      border-top: 2px solid #333;
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Modals & Dialogs */
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-box {
+      background: #1a1817;
+      border: 2px solid #444;
+      padding: 30px;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.9);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 20px;
+      letter-spacing: 1px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+      text-align: left;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .form-control {
+      width: 100%;
+      background: #262423;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .form-control:focus {
+      border-color: #39ff14;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 15px;
+      margin-top: 5px;
+    }
+
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    /* Game Canvases & UI */
     canvas {
       position: absolute;
       top: 0;
@@ -49,21 +320,10 @@
       height: 100%;
     }
 
-    #bgCanvas {
-      z-index: 0;
-    }
+    #bgCanvas { z-index: 0; }
+    #wallCanvas { z-index: 1; filter: drop-shadow(0px 0px 3px rgba(0, 0, 0, 0.5)); }
+    #canCanvas { z-index: 2; pointer-events: none; }
 
-    #wallCanvas {
-      z-index: 1;
-      filter: drop-shadow(0px 0px 3px rgba(0, 0, 0, 0.5));
-    }
-
-    #canCanvas {
-      z-index: 2;
-      pointer-events: none;
-    }
-
-    /* UI Overlay Controls */
     .ui-bar {
       position: absolute;
       bottom: 20px;
@@ -104,7 +364,6 @@
       box-shadow: 0 0 12px currentColor;
     }
 
-    /* Custom Color Wheel Button Styling */
     .color-wheel-wrapper {
       position: relative;
       width: 34px;
@@ -126,21 +385,13 @@
 
     .color-wheel-wrapper input[type="color"] {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
+      top: 0; left: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer;
     }
 
     .color-wheel-inner {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: #39ff14;
-      border: 1.5px solid #fff;
-      pointer-events: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #39ff14; border: 1.5px solid #fff; pointer-events: none;
     }
 
     .tool-btn {
@@ -157,65 +408,131 @@
       transition: all 0.2s ease;
     }
 
-    .tool-btn:hover {
-      background: #444;
-      border-color: #888;
-    }
+    .tool-btn:hover { background: #444; border-color: #888; }
+    .tool-btn.active-tool { background: #39ff14; border-color: #39ff14; color: #121110; box-shadow: 0 0 12px rgba(57, 255, 20, 0.6); }
+    .tool-btn.active-eraser { background: #ff6b81; border-color: #ff4757; color: #fff; box-shadow: 0 0 12px rgba(255, 71, 87, 0.6); }
+    .save-btn:hover { background: #00f0ff; border-color: #00f0ff; color: #121110; }
+    .clear-btn:hover { background: #ff3b30; border-color: #ff3b30; color: #fff; }
+    .leave-btn:hover { background: #ffaa00; border-color: #ffaa00; color: #121110; }
 
-    .tool-btn.active-eraser {
-      background: #ff6b81;
-      border-color: #ff4757;
-      color: #fff;
-      box-shadow: 0 0 12px rgba(255, 71, 87, 0.6);
-    }
-
-    .clear-btn:hover {
-      background: #ff3b30;
-      border-color: #ff3b30;
-      color: #fff;
-    }
-
-    /* Floating Show UI Pill */
     .show-ui-btn {
       position: absolute;
-      bottom: 20px;
-      right: 20px;
+      bottom: 20px; right: 20px; z-index: 10;
+      background: rgba(18, 17, 16, 0.75); color: #fff;
+      border: 1px solid #555; padding: 8px 16px; border-radius: 20px;
+      font-size: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase;
+      letter-spacing: 1px; backdrop-filter: blur(4px); opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease, background 0.2s ease;
+    }
+    .show-ui-btn.visible { opacity: 1; pointer-events: auto; }
+    .show-ui-btn:hover { background: #444; border-color: #fff; }
+
+    /* Connection Status Badge */
+    .connection-badge {
+      position: absolute;
+      top: 20px;
+      left: 20px;
       z-index: 10;
-      background: rgba(18, 17, 16, 0.75);
-      color: #fff;
-      border: 1px solid #555;
+      background: rgba(18, 17, 16, 0.85);
+      border: 1px solid #444;
       padding: 8px 16px;
       border-radius: 20px;
       font-size: 12px;
-      font-weight: bold;
-      cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      display: none;
+      align-items: center;
+      gap: 8px;
       backdrop-filter: blur(4px);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.25s ease, background 0.2s ease;
     }
-
-    .show-ui-btn.visible {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .show-ui-btn:hover {
-      background: #444;
-      border-color: #fff;
-    }
+    .connection-badge.active { display: flex; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #39ff14; box-shadow: 0 0 8px #39ff14; }
   </style>
 </head>
 <body>
 
+  <!-- 1. MAIN MENU SCREEN -->
+  <div id="mainMenuScreen" class="screen active">
+    <div class="menu-container">
+      <div class="menu-title">GRAFFITI WALL</div>
+      <div class="menu-subtitle">Urban Spray Simulator</div>
+      <button class="menu-btn" onclick="startSinglePlayer()">Single Player</button>
+      <button class="menu-btn secondary" onclick="openServerBrowser()">Multiplayer</button>
+    </div>
+  </div>
+
+  <!-- 2. SERVER BROWSER SCREEN -->
+  <div id="serverBrowserScreen" class="screen">
+    <div class="lobby-container">
+      <div class="lobby-header">
+        <div class="lobby-title">Server Browser</div>
+        <button class="tool-btn" onclick="backToMainMenu()">Main Menu</button>
+      </div>
+      <div id="serverListContainer" class="server-list">
+        <div class="no-servers">Searching for public servers...</div>
+      </div>
+      <div class="lobby-footer">
+        <button class="menu-btn" style="margin-bottom:0;" onclick="openCreateServerModal()">Create Server</button>
+        <button class="tool-btn" onclick="refreshServers()" style="padding: 0 20px;">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE SERVER MODAL -->
+  <div id="createServerModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-title">Create New Server</div>
+      <div class="form-group">
+        <label>Server Name</label>
+        <input type="text" id="inputServerName" class="form-control" value="Matthew's Wall" maxlength="25">
+      </div>
+      <div class="form-group">
+        <label>Visibility</label>
+        <div class="radio-group">
+          <label class="radio-label"><input type="radio" name="serverType" value="public" checked onchange="toggleServerType('public')"> Public</label>
+          <label class="radio-label"><input type="radio" name="serverType" value="private" onchange="toggleServerType('private')"> Private</label>
+        </div>
+      </div>
+      <div class="form-group" id="publicOptionsGroup">
+        <label>Max Players</label>
+        <input type="number" id="inputMaxPlayers" class="form-control" value="4" min="2" max="10">
+      </div>
+      <div class="form-group" id="privateOptionsGroup" style="display: none;">
+        <label>Join Code</label>
+        <input type="text" id="inputRoomCode" class="form-control" placeholder="e.g. 1234" maxlength="6">
+      </div>
+      <div class="modal-buttons">
+        <button class="menu-btn" style="margin-bottom:0;" onclick="createServer()">Launch</button>
+        <button class="tool-btn" onclick="closeCreateServerModal()" style="flex:1;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRIVATE ROOM CODE PROMPT MODAL -->
+  <div id="passwordModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-title">Enter Private Room Code</div>
+      <div class="form-group">
+        <label>Code Required</label>
+        <input type="text" id="inputJoinCode" class="form-control" placeholder="Enter code..." maxlength="6">
+      </div>
+      <div class="modal-buttons">
+        <button class="menu-btn" style="margin-bottom:0;" onclick="submitRoomCode()">Join</button>
+        <button class="tool-btn" onclick="closePasswordModal()" style="flex:1;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONNECTION STATUS BADGE IN GAME -->
+  <div id="connectionBadge" class="connection-badge">
+    <div class="status-dot"></div>
+    <span id="badgeText">Multiplayer (1/4)</span>
+  </div>
+
+  <!-- GAME CANVASES & CONTROLS -->
   <canvas id="bgCanvas"></canvas>
   <canvas id="wallCanvas"></canvas>
   <canvas id="canCanvas"></canvas>
 
   <div id="uiBar" class="ui-bar">
-    <!-- Standard Color Presets -->
     <div class="color-btn active" style="background: #39ff14; color: #39ff14;" onclick="setColor('#39ff14', '57, 255, 20', this)"></div>
     <div class="color-btn" style="background: #ff007f; color: #ff007f;" onclick="setColor('#ff007f', '255, 0, 127', this)"></div>
     <div class="color-btn" style="background: #00f0ff; color: #00f0ff;" onclick="setColor('#00f0ff', '0, 240, 255', this)"></div>
@@ -223,21 +540,38 @@
     <div class="color-btn" style="background: #ffffff; color: #ffffff;" onclick="setColor('#ffffff', '255, 255, 255', this)"></div>
     <div class="color-btn" style="background: #111111; color: #888888; border-color: #777;" onclick="setColor('#111111', '17, 17, 17', this)"></div>
 
-    <!-- Custom Color Wheel Picker -->
     <div id="customColorWrapper" class="color-wheel-wrapper" title="Pick Custom Color">
       <div id="colorWheelInner" class="color-wheel-inner"></div>
       <input type="color" id="customColorInput" value="#39ff14" oninput="handleCustomColor(this.value)">
     </div>
     
+    <button id="sizeFine" class="tool-btn" onclick="setSprayRadius(12, this)">Fine</button>
+    <button id="sizeStd" class="tool-btn active-tool" onclick="setSprayRadius(22, this)">Std</button>
+    <button id="sizeWide" class="tool-btn" onclick="setSprayRadius(36, this)">Wide</button>
+
     <button id="eraserBtn" class="tool-btn" onclick="setEraser()">Eraser</button>
+    <button class="tool-btn save-btn" onclick="saveWall()">Save Art</button>
     <button class="tool-btn clear-btn" onclick="clearWall()">Clear Wall</button>
+    <button id="leaveBtn" class="tool-btn leave-btn" onclick="leaveGame()" style="display:none;">Leave</button>
     <button class="tool-btn" onclick="toggleUI(false)">Hide UI</button>
   </div>
 
-  <!-- Show UI Floating Pill Button -->
   <button id="showUiBtn" class="show-ui-btn" onclick="toggleUI(true)">Show Controls</button>
 
   <script>
+    // --- APP & MULTIPLAYER STATE ---
+    let gameMode = 'single'; // 'single', 'host', 'client'
+    let peer = null;
+    let mqttClient = null;
+    let hostConnection = null;
+    let clientConnections = [];
+    let discoveredServers = {};
+    let selectedServerToJoin = null;
+
+    const MQTT_TOPIC_DISCOVERY = 'graffiti_wall_servers_v1';
+    const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+
+    // --- CANVAS SETUP ---
     const bgCanvas = document.getElementById('bgCanvas');
     const wallCanvas = document.getElementById('wallCanvas');
     const canCanvas = document.getElementById('canCanvas');
@@ -249,21 +583,22 @@
     let width, height;
     let drips = [];
 
-    // Default Paint Color & Tool State
     let currentTool = 'spray';
     let currentColorHex = '#39ff14';
     let currentColorRGB = '57, 255, 20';
+    let sprayRadius = 22;
     const ERASER_RADIUS = 35;
 
-    // Interaction State
     let isSpraying = false;
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
     let lastX = mouseX;
     let lastY = mouseY;
+    let lastSprayX = mouseX;
+    let lastSprayY = mouseY;
     let shakeAngle = 0;
 
-    // --- AUDIO SYSTEM (Procedural Web Audio API) ---
+    // --- AUDIO SYSTEM ---
     let audioCtx = null;
     let sprayNode = null;
     let sprayGain = null;
@@ -274,25 +609,19 @@
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         setupSprayAudio();
       }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      if (audioCtx.state === 'suspended') { audioCtx.resume(); }
     }
 
-    // Creates realistic white-noise aerosol spray sound
     function setupSprayAudio() {
       const bufferSize = audioCtx.sampleRate * 2;
       const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
+      for (let i = 0; i < bufferSize; i++) { output[i] = Math.random() * 2 - 1; }
 
       sprayNode = audioCtx.createBufferSource();
       sprayNode.buffer = noiseBuffer;
       sprayNode.loop = true;
 
-      // Filter to mimic aerosol nozzle hiss
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'bandpass';
       filter.frequency.value = 3200;
@@ -315,12 +644,9 @@
     }
 
     function stopSpraySound() {
-      if (sprayGain) {
-        sprayGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.03);
-      }
+      if (sprayGain) { sprayGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.03); }
     }
 
-    // Play spray can metallic marble shake sound
     function playShakeSound() {
       initAudio();
       if (!audioCtx || Date.now() - shakeCooldown < 120) return;
@@ -331,7 +657,6 @@
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(450 + Math.random() * 200, audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.04);
-
       gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
 
@@ -341,20 +666,16 @@
       osc.stop(audioCtx.currentTime + 0.04);
     }
 
-    // Play quick button click audio
     function playClickSound() {
       initAudio();
       if (!audioCtx) return;
-
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(800, audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.05);
-
       gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       osc.start();
@@ -364,20 +685,17 @@
     function resize() {
       width = window.innerWidth;
       height = window.innerHeight;
-      
       bgCanvas.width = width;
       bgCanvas.height = height;
       wallCanvas.width = width;
       wallCanvas.height = height;
       canCanvas.width = width;
       canCanvas.height = height;
-
       drawRealisticBricks();
     }
 
     window.addEventListener('resize', resize);
 
-    // --- PROCEDURAL BRICK WALL TEXTURE ---
     function drawRealisticBricks() {
       bgCtx.clearRect(0, 0, width, height);
       bgCtx.fillStyle = '#262423';
@@ -401,11 +719,9 @@
 
           bgCtx.fillStyle = `rgb(${rCol}, ${gCol}, ${bCol})`;
           bgCtx.fillRect(x, y, brickW, brickH);
-
           bgCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
           bgCtx.fillRect(x, y, brickW, 3);
           bgCtx.fillRect(x, y, 3, brickH);
-
           bgCtx.fillStyle = 'rgba(0, 0, 0, 0.45)';
           bgCtx.fillRect(x, y + brickH - 4, brickW, 4);
           bgCtx.fillRect(x + brickW - 4, y, 4, brickH);
@@ -419,7 +735,6 @@
         }
       }
 
-      // Grime / Vignette Overlay
       const grad = bgCtx.createRadialGradient(width/2, height/2, height*0.2, width/2, height/2, width*0.7);
       grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
       grad.addColorStop(1, 'rgba(8, 8, 8, 0.75)');
@@ -427,11 +742,287 @@
       bgCtx.fillRect(0, 0, width, height);
     }
 
-    // --- INPUT HANDLING (MOUSE & TOUCH) ---
+    // --- NAVIGATION & MENU CONTROLS ---
+    function startSinglePlayer() {
+      playClickSound();
+      gameMode = 'single';
+      document.getElementById('mainMenuScreen').classList.remove('active');
+      document.getElementById('connectionBadge').classList.remove('active');
+      document.getElementById('leaveBtn').style.display = 'none';
+      resize();
+    }
+
+    function openServerBrowser() {
+      playClickSound();
+      document.getElementById('mainMenuScreen').classList.remove('active');
+      document.getElementById('serverBrowserScreen').classList.add('active');
+      initMqttDiscovery();
+      refreshServers();
+    }
+
+    function backToMainMenu() {
+      playClickSound();
+      if (mqttClient) { mqttClient.end(); mqttClient = null; }
+      if (peer) { peer.destroy(); peer = null; }
+      document.getElementById('serverBrowserScreen').classList.remove('active');
+      document.getElementById('mainMenuScreen').classList.add('active');
+    }
+
+    function leaveGame() {
+      playClickSound();
+      if (mqttClient) { mqttClient.end(); mqttClient = null; }
+      if (peer) { peer.destroy(); peer = null; }
+      clearWall();
+      document.getElementById('connectionBadge').classList.remove('active');
+      document.getElementById('serverBrowserScreen').classList.add('active');
+      refreshServers();
+    }
+
+    // --- SERVER CREATION & MODALS ---
+    function openCreateServerModal() {
+      playClickSound();
+      document.getElementById('createServerModal').classList.add('active');
+    }
+
+    function closeCreateServerModal() {
+      playClickSound();
+      document.getElementById('createServerModal').classList.remove('active');
+    }
+
+    function toggleServerType(type) {
+      if (type === 'public') {
+        document.getElementById('publicOptionsGroup').style.display = 'block';
+        document.getElementById('privateOptionsGroup').style.display = 'none';
+      } else {
+        document.getElementById('publicOptionsGroup').style.display = 'none';
+        document.getElementById('privateOptionsGroup').style.display = 'block';
+      }
+    }
+
+    function initMqttDiscovery() {
+      if (mqttClient) return;
+      try {
+        mqttClient = mqtt.connect(MQTT_BROKER_URL);
+        mqttClient.on('connect', () => {
+          mqttClient.subscribe(MQTT_DISCOVERY_TOPIC);
+        });
+        mqttClient.on('message', (topic, payload) => {
+          if (topic === MQTT_DISCOVERY_TOPIC) {
+            try {
+              const data = JSON.parse(payload.toString());
+              if (data.id && data.name) {
+                discoveredServers[data.id] = { ...data, lastSeen: Date.now() };
+                renderServerList();
+              }
+            } catch(e) {}
+          }
+        });
+      } catch(e) {
+        console.error('MQTT error', e);
+      }
+    }
+
+    function refreshServers() {
+      playClickSound();
+      const container = document.getElementById('serverListContainer');
+      container.innerHTML = '<div class="no-servers">Searching for public servers...</div>';
+      
+      // Clean up old servers (older than 10s)
+      const now = Date.now();
+      Object.keys(discoveredServers).forEach(id => {
+        if (now - discoveredServers[id].lastSeen > 10000) {
+          delete discoveredServers[id];
+        }
+      });
+      renderServerList();
+    }
+
+    function renderServerList() {
+      const container = document.getElementById('serverListContainer');
+      const serverIds = Object.keys(discoveredServers);
+      
+      if (serverIds.length === 0) {
+        container.innerHTML = '<div class="no-servers">No active servers found. Click "Create Server" to start one!</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      serverIds.forEach(id => {
+        const s = discoveredServers[id];
+        const card = document.createElement('div');
+        card.className = 'server-card';
+        card.innerHTML = `
+          <div class="server-info">
+            <h4>${s.name} ${s.isPrivate ? '🔒' : ''}</h4>
+            <p>Players: ${s.players || 1}/${s.maxPlayers || 4} • Host: ${s.hostName || 'Player'}</p>
+          </div>
+          <button class="server-join-btn" onclick="tryJoinServer('${id}')">Join</button>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function createServer() {
+      playClickSound();
+      const name = document.getElementById('inputServerName').value || 'Graffiti Room';
+      const isPrivate = document.querySelector('input[name="serverType"]:checked').value === 'private';
+      const maxPlayers = parseInt(document.getElementById('inputMaxPlayers').value) || 4;
+      const code = document.getElementById('inputRoomCode').value || '';
+
+      if (isPrivate && !code) {
+        alert('Please enter a join code for private rooms.');
+        return;
+      }
+
+      closeCreateServerModal();
+      document.getElementById('serverBrowserScreen').classList.remove('active');
+
+      gameMode = 'host';
+      document.getElementById('leaveBtn').style.display = 'inline-block';
+      document.getElementById('badgeText').innerText = `${name} (Host: 1/${maxPlayers}) korban`;
+      document.getElementById('connectionBadge').classList.add('active');
+      resize();
+
+      // Start PeerJS Host
+      peer = new Peer();
+      peer.on('open', (peerId) => {
+        const serverInfo = {
+          id: peerId,
+          name: name,
+          isPrivate: isPrivate,
+          code: code,
+          maxPlayers: maxPlayers,
+          players: 1,
+          hostName: 'Host'
+        };
+
+        // Broadcast presence via MQTT
+        if (mqttClient && mqttClient.connected) {
+          mqttClient.publish(MQTT_DISCOVERY_TOPIC, JSON.stringify(serverInfo));
+          setInterval(() => {
+            if (gameMode === 'host' && mqttClient && mqttClient.connected) {
+              mqttClient.publish(MQTT_DISCOVERY_TOPIC, JSON.stringify(serverInfo));
+            }
+          }, 4000);
+        }
+      });
+
+      peer.on('connection', (conn) => {
+        if (clientConnections.length >= maxPlayers - 1) {
+          conn.on('open', () => { conn.send({ type: 'REJECT', reason: 'Server is full' }); setTimeout(() => conn.close(), 500); });
+          return;
+        }
+
+        clientConnections.push(conn);
+
+        conn.on('open', () => {
+          // Send existing wall state if needed or welcome
+        });
+
+        conn.on('data', (data) => {
+          handleNetworkData(data, conn);
+        });
+
+        conn.on('close', () => {
+          clientConnections = clientConnections.filter(c => c !== conn);
+        });
+      });
+    }
+
+    function tryJoinServer(serverId) {
+      playClickSound();
+      const server = discoveredServers[serverId];
+      if (!server) return;
+
+      selectedServerToJoin = server;
+      if (server.isPrivate) {
+        document.getElementById('passwordModal').classList.add('active');
+      } else {
+        connectToServer(server.id, '');
+      }
+    }
+
+    function closePasswordModal() {
+      playClickSound();
+      document.getElementById('passwordModal').classList.remove('active');
+      selectedServerToJoin = null;
+    }
+
+    function submitRoomCode() {
+      playClickSound();
+      const enteredCode = document.getElementById('inputJoinCode').value;
+      if (selectedServerToJoin && enteredCode === selectedServerToJoin.code) {
+        closePasswordModal();
+        connectToServer(selectedServerToJoin.id, enteredCode);
+      } else {
+        alert('Incorrect room code.');
+      }
+    }
+
+    function connectToServer(hostPeerId, code) {
+      document.getElementById('serverBrowserScreen').classList.remove('active');
+      gameMode = 'client';
+      document.getElementById('leaveBtn').style.display = 'inline-block';
+      document.getElementById('badgeText').innerText = `Connected to Room`;
+      document.getElementById('connectionBadge').classList.add('active');
+      resize();
+
+      peer = new Peer();
+      peer.on('open', () => {
+        hostConnection = peer.connect(hostPeerId);
+
+        hostConnection.on('open', () => {
+          hostConnection.send({ type: 'JOIN', code: code });
+        });
+
+        hostConnection.on('data', (data) => {
+          handleNetworkData(data, hostConnection);
+        });
+
+        hostConnection.on('close', () => {
+          alert('Disconnected from server.');
+          leaveGame();
+        });
+      });
+    }
+
+    // --- NETWORK DATA SYNC ---
+    function handleNetworkData(data, conn) {
+      if (data.type === 'SPRAY') {
+        sprayAtDirect(data.x, data.y, data.rgb, data.radius);
+        // If host, relay to all other clients
+        if (gameMode === 'host') {
+          clientConnections.forEach(c => { if (c !== conn) c.send(data); });
+        }
+      } else if (data.type === 'ERASE') {
+        eraseAtDirect(data.x, data.y);
+        if (gameMode === 'host') {
+          clientConnections.forEach(c => { if (c !== conn) c.send(data); });
+        }
+      } else if (data.type === 'CLEAR') {
+        wallCtx.clearRect(0, 0, width, height);
+        drips = [];
+        if (gameMode === 'host') {
+          clientConnections.forEach(c => { if (c !== conn) c.send(data); });
+        }
+      } else if (data.type === 'REJECT') {
+        alert(data.reason || 'Could not join server.');
+        leaveGame();
+      }
+    }
+
+    function sendNetworkAction(actionData) {
+      if (gameMode === 'host') {
+        clientConnections.forEach(c => c.send(actionData));
+      } else if (gameMode === 'client' && hostConnection && hostConnection.open) {
+        hostConnection.send(actionData);
+      }
+    }
+
+    // --- INPUT HANDLING ---
     function updateCoords(e) {
       lastX = mouseX;
       lastY = mouseY;
-
       if (e.touches && e.touches.length > 0) {
         mouseX = e.touches[0].clientX;
         mouseY = e.touches[0].clientY;
@@ -439,84 +1030,57 @@
         mouseX = e.clientX;
         mouseY = e.clientY;
       }
-
-      // Detect movement speed to trigger shake sound
       const dist = Math.hypot(mouseX - lastX, mouseY - lastY);
-      if (dist > 18) {
-        playShakeSound();
-      }
+      if (dist > 18) { playShakeSound(); }
     }
 
     function isUiTarget(e) {
-      return e.target.closest('#uiBar') || e.target.closest('#showUiBtn');
+      return e.target.closest('#uiBar') || e.target.closest('#showUiBtn') || e.target.closest('.modal-overlay');
     }
 
     window.addEventListener('mousedown', (e) => {
-      if (isUiTarget(e)) return;
+      if (isUiTarget(e) || document.querySelector('.screen.active') || document.querySelector('.modal-overlay.active')) return;
       isSpraying = true;
       updateCoords(e);
+      lastSprayX = mouseX;
+      lastSprayY = mouseY;
       startSpraySound();
     });
 
     window.addEventListener('mousemove', updateCoords);
-    
-    window.addEventListener('mouseup', () => { 
-      isSpraying = false; 
-      stopSpraySound();
-    });
-    
-    window.addEventListener('mouseleave', () => { 
-      isSpraying = false; 
-      stopSpraySound();
-    });
+    window.addEventListener('mouseup', () => { isSpraying = false; stopSpraySound(); });
+    window.addEventListener('mouseleave', () => { isSpraying = false; stopSpraySound(); });
 
     window.addEventListener('touchstart', (e) => {
-      if (isUiTarget(e)) return;
+      if (isUiTarget(e) || document.querySelector('.screen.active') || document.querySelector('.modal-overlay.active')) return;
       isSpraying = true;
       updateCoords(e);
+      lastSprayX = mouseX;
+      lastSprayY = mouseY;
       startSpraySound();
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
-      if (isSpraying) {
-        e.preventDefault();
-        updateCoords(e);
-      }
+      if (isSpraying) { e.preventDefault(); updateCoords(e); }
     }, { passive: false });
 
-    window.addEventListener('touchend', () => { 
-      isSpraying = false; 
-      stopSpraySound();
-    });
-    
-    window.addEventListener('touchcancel', () => { 
-      isSpraying = false; 
-      stopSpraySound();
-    });
+    window.addEventListener('touchend', () => { isSpraying = false; stopSpraySound(); });
+    window.addEventListener('touchcancel', () => { isSpraying = false; stopSpraySound(); });
 
-    // Keyboard Shortcut (Press 'H' to toggle UI)
     window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'h') {
+      if (e.key.toLowerCase() === 'h' && !document.querySelector('.screen.active')) {
         const uiBar = document.getElementById('uiBar');
-        const isHidden = uiBar.classList.contains('hidden');
-        toggleUI(isHidden);
+        toggleUI(uiBar.classList.contains('hidden'));
       }
     });
 
-    // --- HEX TO RGB CONVERTER ---
     function hexToRgb(hex) {
       hex = hex.replace(/^#/, '');
-      if (hex.length === 3) {
-        hex = hex.split('').map(c => c + c).join('');
-      }
+      if (hex.length === 3) { hex = hex.split('').map(c => c + c).join(''); }
       const num = parseInt(hex, 16);
-      const r = (num >> 16) & 255;
-      const g = (num >> 8) & 255;
-      const b = num & 255;
-      return `${r}, ${g}, ${b}`;
+      return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
     }
 
-    // --- TOOL & COLOR SELECTION ---
     function setColor(hex, rgb, btnElement) {
       playClickSound();
       currentTool = 'spray';
@@ -533,10 +1097,16 @@
       currentColorHex = hex;
       currentColorRGB = hexToRgb(hex);
       document.getElementById('colorWheelInner').style.background = hex;
-
       document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
       document.getElementById('customColorWrapper').classList.add('active');
       document.getElementById('eraserBtn').classList.remove('active-eraser');
+    }
+
+    function setSprayRadius(radius, btnElement) {
+      playClickSound();
+      sprayRadius = radius;
+      document.querySelectorAll('#sizeFine, #sizeStd, #sizeWide').forEach(btn => btn.classList.remove('active-tool'));
+      if (btnElement) btnElement.classList.add('active-tool');
     }
 
     function setEraser() {
@@ -548,10 +1118,25 @@
       document.getElementById('eraserBtn').classList.add('active-eraser');
     }
 
+    function saveWall() {
+      playClickSound();
+      const link = document.createElement('a');
+      link.download = 'graffiti-art.png';
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const exportCtx = exportCanvas.getContext('2d');
+      exportCtx.drawImage(bgCanvas, 0, 0);
+      exportCtx.drawImage(wallCanvas, 0, 0);
+      link.href = exportCanvas.toDataURL('image/png');
+      link.click();
+    }
+
     function clearWall() {
       playClickSound();
       wallCtx.clearRect(0, 0, width, height);
       drips = [];
+      sendNetworkAction({ type: 'CLEAR' });
     }
 
     function toggleUI(show) {
@@ -567,111 +1152,24 @@
       }
     }
 
-    // --- SPRAY PAINT CAN RENDERING ---
-    function drawSprayCan(x, y, shake, spraying) {
-      canCtx.save();
-      canCtx.translate(x, y);
-      canCtx.rotate(shake);
-
-      // Aerosol mist cone from nozzle
-      if (spraying) {
-        const gradient = canCtx.createRadialGradient(-30, -75, 4, -30, -75, 45);
-        gradient.addColorStop(0, `rgba(${currentColorRGB}, 0.85)`);
-        gradient.addColorStop(0.4, `rgba(${currentColorRGB}, 0.25)`);
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
-        canCtx.fillStyle = gradient;
-        canCtx.beginPath();
-        canCtx.arc(-30, -75, 45, 0, Math.PI * 2);
-        canCtx.fill();
-      }
-
-      // Can Cap & Nozzle Tip
-      canCtx.fillStyle = '#e0e0e0';
-      canCtx.fillRect(-8, -75, 16, 12);
-      canCtx.fillStyle = '#0a0a0a';
-      canCtx.fillRect(-10, -70, 4, 4);
-
-      // Metallic Dome
-      canCtx.fillStyle = '#4f4f4f';
-      canCtx.beginPath();
-      canCtx.moveTo(-25, -45);
-      canCtx.quadraticCurveTo(0, -68, 25, -45);
-      canCtx.fill();
-
-      // Main Body
-      const bodyGrad = canCtx.createLinearGradient(-30, 0, 30, 0);
-      bodyGrad.addColorStop(0, '#111');
-      bodyGrad.addColorStop(0.3, '#333');
-      bodyGrad.addColorStop(0.7, '#222');
-      bodyGrad.addColorStop(1, '#080808');
-      canCtx.fillStyle = bodyGrad;
-      canCtx.fillRect(-28, -45, 56, 130);
-
-      // Label matching current paint color
-      canCtx.fillStyle = '#0f0f0f';
-      canCtx.fillRect(-28, -25, 56, 70);
-      canCtx.fillStyle = currentColorHex;
-      canCtx.font = 'bold 12px monospace';
-      canCtx.textAlign = 'center';
-      canCtx.fillText('KRYLON', 0, 0);
-      canCtx.fillText('SPRAY', 0, 18);
-
-      // Bottom Rim
-      canCtx.fillStyle = '#5a5a5a';
-      canCtx.fillRect(-28, 83, 56, 6);
-
-      canCtx.restore();
-    }
-
-    // --- ERASER CURSOR RENDERING ---
-    function drawEraserCursor(x, y, active) {
-      canCtx.save();
-      canCtx.translate(x, y);
-
-      // Dashed Target Circle
-      canCtx.strokeStyle = active ? '#ff6b81' : '#ffffff';
-      canCtx.lineWidth = 2;
-      canCtx.setLineDash([6, 4]);
-      canCtx.beginPath();
-      canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2);
-      canCtx.stroke();
-
-      // Translucent scrubbing fill when active
-      if (active) {
-        canCtx.fillStyle = 'rgba(255, 107, 129, 0.25)';
-        canCtx.beginPath();
-        canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2);
-        canCtx.fill();
-      }
-
-      // Small Pink Eraser Block Icon at bottom-right of circle
-      canCtx.translate(ERASER_RADIUS - 8, ERASER_RADIUS - 8);
-      canCtx.rotate(-0.3);
-      canCtx.fillStyle = '#ff6b81';
-      canCtx.fillRect(-12, -8, 24, 16);
-      canCtx.fillStyle = '#fff';
-      canCtx.fillRect(-12, -8, 8, 16);
-      canCtx.strokeStyle = '#222';
-      canCtx.lineWidth = 1;
-      canCtx.strokeRect(-12, -8, 24, 16);
-
-      canCtx.restore();
-    }
-
-    // --- APPLY PAINT TO WALL ---
+    // --- SPRAY & ERASE DRAWING LOGIC ---
     function sprayAt(x, y) {
+      sprayAtDirect(x, y, currentColorRGB, sprayRadius);
+      sendNetworkAction({ type: 'SPRAY', x: x, y: y, rgb: currentColorRGB, radius: sprayRadius });
+    }
+
+    function sprayAtDirect(x, y, rgb, radius) {
       wallCtx.save();
       wallCtx.globalCompositeOperation = 'source-over';
-
-      const density = 60;
+      const density = Math.floor(radius * 2.5);
       for (let i = 0; i < density; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 22;
-        const dotX = x + Math.cos(angle) * radius;
-        const dotY = y + Math.sin(angle) * radius;
-        const alpha = (1 - radius / 22) * 0.85;
+        const r = Math.random() * radius;
+        const dotX = x + Math.cos(angle) * r;
+        const dotY = y + Math.sin(angle) * r;
+        const alpha = (1 - r / radius) * 0.85;
 
-        wallCtx.fillStyle = `rgba(${currentColorRGB}, ${alpha})`;
+        wallCtx.fillStyle = `rgba(${rgb}, ${alpha})`;
         wallCtx.beginPath();
         wallCtx.arc(dotX, dotY, Math.random() * 2.2 + 0.8, 0, Math.PI * 2);
         wallCtx.fill();
@@ -685,15 +1183,19 @@
           length: 0,
           maxLength: Math.random() * 80 + 15,
           width: Math.random() * 2.4 + 1.2,
-          rgb: currentColorRGB,
+          rgb: rgb,
           alpha: 0.95
         });
       }
       wallCtx.restore();
     }
 
-    // --- ERASE CIRCLE AREA ON WALL ---
     function eraseAt(x, y) {
+      eraseAtDirect(x, y);
+      sendNetworkAction({ type: 'ERASE', x: x, y: y });
+    }
+
+    function eraseAtDirect(x, y) {
       wallCtx.save();
       wallCtx.globalCompositeOperation = 'destination-out';
       wallCtx.beginPath();
@@ -702,7 +1204,6 @@
       wallCtx.restore();
     }
 
-    // --- RENDER FLOWING DRIPS ---
     function renderDrips() {
       wallCtx.save();
       wallCtx.globalCompositeOperation = 'source-over';
@@ -711,7 +1212,6 @@
         if (d.length < d.maxLength) {
           d.length += d.speed;
           d.y += d.speed;
-
           wallCtx.fillStyle = `rgba(${d.rgb}, ${d.alpha})`;
           wallCtx.beginPath();
           wallCtx.arc(d.x, d.y, d.width, 0, Math.PI * 2);
@@ -721,30 +1221,102 @@
       wallCtx.restore();
     }
 
-    // --- GAME LOOP ---
+    // --- RENDER TOOLS & CURSORS ---
+    function drawSprayCan(x, y, shake, spraying) {
+      canCtx.save();
+      canCtx.translate(x, y);
+      canCtx.rotate(shake);
+      if (spraying) {
+        const gradient = canCtx.createRadialGradient(-30, -75, 4, -30, -75, 45);
+        gradient.addColorStop(0, `rgba(${currentColorRGB}, 0.85)`);
+        gradient.addColorStop(0.4, `rgba(${currentColorRGB}, 0.25)`);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        canCtx.fillStyle = gradient;
+        canCtx.beginPath();
+        canCtx.arc(-30, -75, 45, 0, Math.PI * 2);
+        canCtx.fill();
+      }
+      canCtx.fillStyle = '#e0e0e0'; canCtx.fillRect(-8, -75, 16, 12);
+      canCtx.fillStyle = '#0a0a0a'; canCtx.fillRect(-10, -70, 4, 4);
+      canCtx.fillStyle = '#4f4f4f';
+      canCtx.beginPath(); canCtx.moveTo(-25, -45); canCtx.quadraticCurveTo(0, -68, 25, -45); canCtx.fill();
+      
+      const bodyGrad = canCtx.createLinearGradient(-30, 0, 30, 0);
+      bodyGrad.addColorStop(0, '#111'); bodyGrad.addColorStop(0.3, '#333'); bodyGrad.addColorStop(0.7, '#222'); bodyGrad.addColorStop(1, '#080808');
+      canCtx.fillStyle = bodyGrad; canCtx.fillRect(-28, -45, 56, 130);
+      canCtx.fillStyle = '#0f0f0f'; canCtx.fillRect(-28, -25, 56, 70);
+      canCtx.fillStyle = currentColorHex; canCtx.font = 'bold 12px monospace'; canCtx.textAlign = 'center';
+      canCtx.fillText('KRYLON', 0, 0); canCtx.fillText('SPRAY', 0, 18);
+      canCtx.fillStyle = '#5a5a5a'; canCtx.fillRect(-28, 83, 56, 6);
+      canCtx.restore();
+    }
+
+    function drawEraserCursor(x, y, active) {
+      canCtx.save();
+      canCtx.translate(x, y);
+      canCtx.strokeStyle = active ? '#ff6b81' : '#ffffff';
+      canCtx.lineWidth = 2; canCtx.setLineDash([6, 4]);
+      canCtx.beginPath(); canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2); canCtx.stroke();
+      if (active) {
+        canCtx.fillStyle = 'rgba(255, 107, 129, 0.25)';
+        canCtx.beginPath(); canCtx.arc(0, 0, ERASER_RADIUS, 0, Math.PI * 2); canCtx.fill();
+      }
+      canCtx.translate(ERASER_RADIUS - 8, ERASER_RADIUS - 8);
+      canCtx.rotate(-0.3);
+      canCtx.fillStyle = '#ff6b81'; canCtx.fillRect(-12, -8, 24, 16);
+      canCtx.fillStyle = '#fff'; canCtx.fillRect(-12, -8, 8, 16);
+      canCtx.strokeStyle = '#222'; canCtx.lineWidth = 1; canCtx.strokeRect(-12, -8, 24, 16);
+      canCtx.restore();
+    }
+
+    // --- ANIMATION / GAME LOOP ---
     function animate() {
       canCtx.clearRect(0, 0, width, height);
       renderDrips();
 
-      if (currentTool === 'spray') {
-        if (isSpraying) {
-          sprayAt(mouseX, mouseY);
-          shakeAngle = (Math.random() - 0.5) * 0.08;
-        } else {
-          shakeAngle = 0;
+      const isMenuActive = document.querySelector('.screen.active') || document.querySelector('.modal-overlay.active');
+
+      if (!isMenuActive) {
+        if (currentTool === 'spray') {
+          if (isSpraying) {
+            const dist = Math.hypot(mouseX - lastSprayX, mouseY - lastSprayY);
+            const steps = Math.max(1, Math.floor(dist / 4));
+            for (let i = 0; i <= steps; i++) {
+              const interpX = lastSprayX + (mouseX - lastSprayX) * (i / steps);
+              const interpY = lastSprayY + (mouseY - lastSprayY) * (i / steps);
+              sprayAt(interpX, interpY);
+            }
+            lastSprayX = mouseX;
+            lastSprayY = mouseY;
+            shakeAngle = (Math.random() - 0.5) * 0.08;
+          } else {
+            lastSprayX = mouseX;
+            lastSprayY = mouseY;
+            shakeAngle = 0;
+          }
+          drawSprayCan(mouseX + 30, mouseY + 75, shakeAngle, isSpraying);
+        } else if (currentTool === 'eraser') {
+          if (isSpraying) {
+            const dist = Math.hypot(mouseX - lastSprayX, mouseY - lastSprayY);
+            const steps = Math.max(1, Math.floor(dist / 4));
+            for (let i = 0; i <= steps; i++) {
+              const interpX = lastSprayX + (mouseX - lastSprayX) * (i / steps);
+              const interpY = lastSprayY + (mouseY - lastSprayY) * (i / steps);
+              eraseAt(interpX, interpY);
+            }
+            lastSprayX = mouseX;
+            lastSprayY = mouseY;
+          } else {
+            lastSprayX = mouseX;
+            lastSprayY = mouseY;
+          }
+          drawEraserCursor(mouseX, mouseY, isSpraying);
         }
-        drawSprayCan(mouseX + 30, mouseY + 75, shakeAngle, isSpraying);
-      } else if (currentTool === 'eraser') {
-        if (isSpraying) {
-          eraseAt(mouseX, mouseY);
-        }
-        drawEraserCursor(mouseX, mouseY, isSpraying);
       }
 
       requestAnimationFrame(animate);
     }
 
-    // Initialize
     resize();
     requestAnimationFrame(animate);
   </script>
