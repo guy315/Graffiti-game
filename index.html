@@ -1115,8 +1115,36 @@
           return;
         }
 
+        // Validate private room code instantly from connection metadata
+        if (isPrivateServer) {
+          const enteredCode = String(conn.metadata?.code || '').trim().toLowerCase();
+          const actualCode = String(hostRoomCode || '').trim().toLowerCase();
+          
+          if (enteredCode !== actualCode) {
+            conn.on('open', () => {
+              conn.send({ type: 'REJECT', reason: 'Incorrect room code!' });
+              setTimeout(() => conn.close(), 500);
+            });
+            return;
+          }
+        }
+
         conn.on('open', () => {
-          // Wait for JOIN message with code validation before adding to client list
+          if (!clientConnections.includes(conn)) {
+            clientConnections.push(conn);
+            updateHostPlayerBadge();
+          }
+
+          conn.send({ type: 'WELCOME' });
+
+          const tempC = document.createElement('canvas');
+          tempC.width = Math.floor(width / 2);
+          tempC.height = Math.floor(height / 2);
+          const tCtx = tempC.getContext('2d');
+          tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
+          const currentArt = tempC.toDataURL('image/jpeg', 0.6);
+
+          conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
         });
 
         conn.on('data', (data) => {
@@ -1175,11 +1203,12 @@
 
       peer = new Peer();
       peer.on('open', () => {
-        hostConnection = peer.connect(hostPeerId, { reliable: true });
-
-        hostConnection.on('open', () => {
-          hostConnection.send({ type: 'JOIN', code: code });
+        hostConnection = peer.connect(hostPeerId, { 
+          reliable: true,
+          metadata: { code: code } 
         });
+
+        hostConnection.on('open', () => {});
 
         hostConnection.on('data', (data) => {
           handleNetworkData(data, hostConnection);
@@ -1199,37 +1228,7 @@
 
     // --- NETWORK DATA SYNC ---
     function handleNetworkData(data, conn) {
-      if (data.type === 'JOIN') {
-        if (gameMode === 'host') {
-          // Validate code if private
-          if (isPrivateServer) {
-            const cleanEntered = String(data.code || '').trim().toLowerCase();
-            const cleanHost = String(hostRoomCode || '').trim().toLowerCase();
-            if (cleanEntered !== cleanHost) {
-              conn.send({ type: 'REJECT', reason: 'Incorrect room code!' });
-              setTimeout(() => conn.close(), 500);
-              return;
-            }
-          }
-
-          if (!clientConnections.includes(conn)) {
-            clientConnections.push(conn);
-            updateHostPlayerBadge();
-          }
-
-          conn.send({ type: 'WELCOME' });
-
-          // Send compressed/scaled-down canvas state to avoid WebRTC data limit crashes
-          const tempC = document.createElement('canvas');
-          tempC.width = Math.floor(width / 2);
-          tempC.height = Math.floor(height / 2);
-          const tCtx = tempC.getContext('2d');
-          tCtx.drawImage(wallCanvas, 0, 0, tempC.width, tempC.height);
-          const currentArt = tempC.toDataURL('image/jpeg', 0.6);
-
-          conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
-        }
-      } else if (data.type === 'WELCOME') {
+      if (data.type === 'WELCOME') {
         document.getElementById('badgeText').innerText = `Connected to Room`;
       } else if (data.type === 'LOAD_CANVAS') {
         const img = new Image();
