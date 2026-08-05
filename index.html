@@ -415,10 +415,10 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      background: rgba(18, 17, 16, 0.92);
-      padding: 10px 18px;
+      background: rgba(18, 17, 16, 0.95);
+      padding: 12px 20px;
       border-radius: 30px;
-      border: 1px solid #333;
+      border: 1px solid #444;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
       backdrop-filter: blur(6px);
       flex-wrap: wrap;
@@ -647,7 +647,9 @@
     <button id="sizeStd" class="tool-btn active-tool" onclick="setSprayRadius(22, this)">Std</button>
     <button id="sizeWide" class="tool-btn" onclick="setSprayRadius(36, this)">Wide</button>
 
+    <!-- Drip Toggle Button -->
     <button id="dripBtn" class="tool-btn active-tool" onclick="toggleDrips()">Drips: ON</button>
+    
     <button id="eraserBtn" class="tool-btn" onclick="setEraser()">Eraser</button>
     <button class="tool-btn save-btn" onclick="saveWall()">Save Art</button>
     <button class="tool-btn clear-btn" onclick="clearWall()">Clear Wall</button>
