@@ -394,13 +394,14 @@
       margin-top: 25px;
     }
 
-    /* Game Canvases & UI */
+    /* Game Canvases & UI (Fixed Desktop Workspace Sizing) */
     canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
+      object-fit: fill;
     }
 
     #bgCanvas { z-index: 0; }
@@ -646,6 +647,7 @@
     <button id="sizeStd" class="tool-btn active-tool" onclick="setSprayRadius(22, this)">Std</button>
     <button id="sizeWide" class="tool-btn" onclick="setSprayRadius(36, this)">Wide</button>
 
+    <button id="dripBtn" class="tool-btn active-tool" onclick="toggleDrips()">Drips: ON</button>
     <button id="eraserBtn" class="tool-btn" onclick="setEraser()">Eraser</button>
     <button class="tool-btn save-btn" onclick="saveWall()">Save Art</button>
     <button class="tool-btn clear-btn" onclick="clearWall()">Clear Wall</button>
@@ -663,9 +665,6 @@
       if (!playerId) {
         playerId = 'painter_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
         localStorage.setItem('spray_game_player_id', playerId);
-        console.log("Created new permanent player ID:", playerId);
-      } else {
-        console.log("Loaded existing permanent player ID:", playerId);
       }
       return playerId;
     }
@@ -686,7 +685,7 @@
     const MQTT_TOPIC_DISCOVERY = 'graffiti_wall_servers_v1';
     const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 
-    // --- CANVAS SETUP ---
+    // --- CANVAS SETUP & PC SCREEN SIZING ---
     const bgCanvas = document.getElementById('bgCanvas');
     const wallCanvas = document.getElementById('wallCanvas');
     const canCanvas = document.getElementById('canCanvas');
@@ -695,8 +694,14 @@
     const wallCtx = wallCanvas.getContext('2d');
     const canCtx = canCanvas.getContext('2d');
 
-    let width, height;
+    // Fixed standard desktop resolution for mobile & PC to match workspace
+    const BASE_WIDTH = 1280;
+    const BASE_HEIGHT = 720;
+    let width = BASE_WIDTH;
+    let height = BASE_HEIGHT;
+    
     let drips = [];
+    let dripsEnabled = true;
 
     let currentTool = 'spray';
     let currentColorHex = '#39ff14';
@@ -705,8 +710,8 @@
     const ERASER_RADIUS = 35;
 
     let isSpraying = false;
-    let mouseX = window.innerWidth / 2;
-    let mouseY = window.innerHeight / 2;
+    let mouseX = BASE_WIDTH / 2;
+    let mouseY = BASE_HEIGHT / 2;
     let lastX = mouseX;
     let lastY = mouseY;
     let lastSprayX = mouseX;
@@ -798,8 +803,8 @@
     }
 
     function resize() {
-      width = window.innerWidth;
-      height = window.innerHeight;
+      width = BASE_WIDTH;
+      height = BASE_HEIGHT;
       bgCanvas.width = width;
       bgCanvas.height = height;
       wallCanvas.width = width;
@@ -1169,8 +1174,6 @@
       }
 
       conn.send({ type: 'WELCOME' });
-
-      // Fixed: Using wallCanvas with PNG to preserve transparency (no black background)
       const currentArt = wallCanvas.toDataURL('image/png');
       conn.send({ type: 'LOAD_CANVAS', dataURL: currentArt });
     }
@@ -1287,17 +1290,31 @@
       }
     }
 
-    // --- INPUT HANDLING ---
+    // --- INPUT HANDLING & SCREEN SCALING ---
+    function getCanvasCoords(e) {
+      const rect = wallCanvas.getBoundingClientRect();
+      let clientX, clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+      const scaleX = wallCanvas.width / rect.width;
+      const scaleY = wallCanvas.height / rect.height;
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
     function updateCoords(e) {
       lastX = mouseX;
       lastY = mouseY;
-      if (e.touches && e.touches.length > 0) {
-        mouseX = e.touches[0].clientX;
-        mouseY = e.touches[0].clientY;
-      } else {
-        mouseX = e.clientX;
-        mouseY = e.clientY;
-      }
+      const coords = getCanvasCoords(e);
+      mouseX = coords.x;
+      mouseY = coords.y;
       const dist = Math.hypot(mouseX - lastX, mouseY - lastY);
       if (dist > 18) { playShakeSound(); }
     }
@@ -1377,6 +1394,19 @@
       if (btnElement) btnElement.classList.add('active-tool');
     }
 
+    function toggleDrips() {
+      playClickSound();
+      dripsEnabled = !dripsEnabled;
+      const btn = document.getElementById('dripBtn');
+      if (dripsEnabled) {
+        btn.classList.add('active-tool');
+        btn.innerText = 'Drips: ON';
+      } else {
+        btn.classList.remove('active-tool');
+        btn.innerText = 'Drips: OFF';
+      }
+    }
+
     function setEraser() {
       playClickSound();
       stopSpraySound();
@@ -1429,7 +1459,7 @@
         wallCtx.fill();
       }
 
-      if (Math.random() < 0.18) {
+      if (dripsEnabled && Math.random() < 0.18) {
         drips.push({
           x: x + (Math.random() - 0.5) * 12,
           y: y,
